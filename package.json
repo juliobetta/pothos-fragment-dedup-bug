@@ -4,8 +4,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node src/server.ts",
-    "seed": "ts-node src/seed.ts",
-    "test:bug": "ts-node src/test-runner.ts",
+    "seed": "ts-node --transpile-only src/seed.ts",
+    "test:bug": "ts-node --transpile-only src/test-runner.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate"
   },
