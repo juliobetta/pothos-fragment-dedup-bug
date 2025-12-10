@@ -1,0 +1,62 @@
+name: Bug Reproduction Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pothos_bug
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pothos_bug
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed database
+        run: npm run seed
+
+      - name: Run bug reproduction test
+        run: npm run test:bug 2>&1 | tee output.log
+
+      - name: Verify OR pattern exists (bug reproduced)
+        run: |
+          if grep -q "property_id.*end_date.*OR" output.log; then
+            echo "✅ Bug reproduced: OR pattern found in SQL"
+          else
+            echo "❌ Bug NOT reproduced: OR pattern not found"
+            exit 1
+          fi

@@ -63,6 +63,16 @@ fragment A on Property { metricsA: metrics(...) { fieldA } }
 fragment B on Property { metricsB: metrics(...) { fieldC } }
 ```
 
+## CI
+
+This repo includes a GitHub Action that automatically runs the bug reproduction test:
+
+```bash
+.github/workflows/test.yml
+```
+
+The CI verifies the OR pattern appears in SQL output (bug reproduced).
+
 ## Versions
 
 - Prisma: 6.19.0
