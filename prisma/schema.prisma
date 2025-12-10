@@ -12,67 +12,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Event {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  startDate   DateTime
-  endDate     DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model Account {
-  id                    String                      @id @default(cuid())
-  name                  String
-  propertyRelationships AccountPropertyRelationship[]
-}
-
-model AccountPropertyRelationship {
-  id         String   @id @default(cuid())
-  accountId  String   @map("account_id")
-  propertyId String   @map("property_id")
-  account    Account  @relation(fields: [accountId], references: [id])
-  property   Property @relation(fields: [propertyId], references: [id])
-
-  @@unique([accountId, propertyId])
-  @@map("account_property_relationships")
-}
-
+// Simple parent model
 model Property {
-  id                   String                       @id @default(cuid())
-  name                 String
-  accountRelationships AccountPropertyRelationship[]
-  metricsSource        PropertyMetricsSource[]
-  metrics              PropertyMetrics[]
+  id      String   @id @default(cuid())
+  name    String
+  metrics Metric[]
 }
 
-// Source table for the view
-model PropertyMetricsSource {
-  propertyId        String   @map("property_id")
-  endDate           DateTime @map("end_date") @db.Date
-  month             Int
-  electricity       Int
-  greenPowerOnsite  Int      @default(0) @map("green_power_onsite")
-  greenPowerOffsite Int      @default(0) @map("green_power_offsite")
-
-  property Property @relation(fields: [propertyId], references: [id])
-
-  @@id([propertyId, endDate])
-  @@map("property_metrics_source")
-}
-
-// View that aggregates metrics (simulates property_metrics_next)
-model PropertyMetrics {
-  propertyId        String   @map("property_id")
-  endDate           DateTime @map("end_date") @db.Date
-  month             Int
-  electricity       Int
-  greenPowerOnsite  Int      @map("green_power_onsite")
-  greenPowerOffsite Int      @map("green_power_offsite")
+// Child with composite unique key (triggers the bug)
+model Metric {
+  propertyId String   @map("property_id")
+  endDate    DateTime @map("end_date") @db.Date
+  month      Int
+  fieldA     Int      @map("field_a")  // Fragment 1 requests this
+  fieldB     Int      @map("field_b")  // Both fragments request this
+  fieldC     Int      @map("field_c")  // Fragment 2 requests this
 
   property Property @relation(fields: [propertyId], references: [id])
 
   @@unique([propertyId, endDate])
-  @@map("property_metrics_view")
 }

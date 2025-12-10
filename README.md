@@ -1,101 +1,70 @@
-# Pothos Fragment Deduplication Bug Reproduction
+# Pothos Fragment Deduplication Bug
 
-This project reproduces a bug in Pothos GraphQL where fragments sharing the same alias but requesting different fields generate suboptimal SQL queries with OR patterns instead of optimal LATERAL JOINs.
+Minimal reproduction of a Pothos GraphQL bug where fragments sharing the same alias but requesting different fields generate suboptimal SQL with OR patterns.
 
 ## Bug Summary
 
-**When two fragments share the same alias with identical filter arguments but request DIFFERENT fields**, Pothos's dataloader:
-
-1. Loads data for fragment 1 via optimal LATERAL JOIN
-2. Sees fragment 2 needs additional fields (e.g., `greenPowerOffsite`)
-3. Loads missing fields by **unique key** `(propertyId, endDate)` instead of re-running the filter
-4. Generates OR pattern: `WHERE ((property_id=$1 AND end_date=$2) OR ...)`
+When two fragments share the same alias with identical filter args but request **different fields**, Pothos's dataloader loads missing fields by unique key instead of re-running the filter.
 
 ### Buggy SQL (same alias)
 ```sql
-SELECT "green_power_offsite" FROM "property_metrics_view" 
-WHERE (("property_id" = $1 AND "end_date" = $2) 
-    OR ("property_id" = $3 AND "end_date" = $4) 
-    OR ...)
+SELECT "field_a" FROM "Metric" 
+WHERE (("property_id" = $1 AND "end_date" = $2) OR ...)  -- OR pattern!
 ```
 
 ### Optimal SQL (different aliases)
 ```sql
-LEFT JOIN LATERAL (
-  SELECT ... FROM "property_metrics_view" 
-  WHERE ("end_date" >= $1 AND "end_date" <= $2 AND "month" = $3)
-  ...
-) ...
+LEFT JOIN LATERAL (... WHERE "end_date" >= $1 AND "end_date" <= $2 ...)
 ```
 
-## Root Cause
+## Setup
 
-The `select: { propertyId: true, endDate: true }` configuration on `PropertyMetrics` tells Pothos to use the composite key for dataloader batching. When fragments share the same alias with different field selections, Pothos batches the load of missing fields by unique key rather than re-executing with the filter.
+```bash
+docker-compose up -d
+npm install
+npx prisma generate
+npx prisma migrate dev
+npm run seed
+```
+
+## Reproduce
+
+```bash
+npm run test:bug
+```
+
+Watch for:
+- **TEST 1**: OR pattern in SQL (buggy)
+- **TEST 2**: All LATERAL JOINs (optimal)
+
+## Key Configuration
+
+```typescript
+// Metric type with composite key (triggers bug)
+builder.prismaObject("Metric", {
+  select: { propertyId: true, endDate: true },  // CRITICAL
+  ...
+});
+
+// relatedConnection with composite cursor
+metrics: t.relatedConnection("metrics", {
+  cursor: "propertyId_endDate",
+  ...
+});
+```
+
+## Workaround
+
+Use different aliases for each fragment:
+
+```graphql
+# Instead of both using "yearlyMetrics":
+fragment A on Property { metricsA: metrics(...) { fieldA } }
+fragment B on Property { metricsB: metrics(...) { fieldC } }
+```
 
 ## Versions
 
 - Prisma: 6.19.0
 - @pothos/core: 4.10.0
 - @pothos/plugin-prisma: 4.13.0
-- @pothos/plugin-prisma-utils: (latest)
-- @pothos/plugin-relay: 4.6.2
-
-## Prerequisites
-
-- Docker (for PostgreSQL)
-- Node.js 18+
-
-## Setup
-
-```bash
-# Start PostgreSQL
-docker-compose up -d
-
-# Install dependencies
-npm install
-
-# Generate Prisma client
-npx prisma generate
-
-# Run migrations and seed
-npx prisma migrate dev
-npm run seed
-```
-
-## Reproduce the Bug
-
-```bash
-npm run test:bug
-```
-
-This runs two queries:
-1. **BUGGY**: Fragments share same `yearlyMetrics` alias → produces OR pattern
-2. **WORKAROUND**: Fragments use different aliases → produces optimal LATERAL JOINs
-
-## Workaround
-
-Use different aliases for each fragment, even if filter arguments are identical:
-
-```graphql
-# Instead of both fragments using "yearlyMetrics":
-fragment ElectricityChart_property on Property {
-  electricityMetrics: metrics(filter: {...}) { ... }  # Unique alias
-}
-
-fragment GreenPowerChart_property on Property {
-  greenPowerMetrics: metrics(filter: {...}) { ... }   # Different alias
-}
-```
-
-## Key Configuration
-
-The bug requires these conditions:
-1. `select: { propertyId: true, endDate: true }` on the Prisma object (composite key)
-2. `prismaWhere` filter from `@pothos/plugin-prisma-utils`
-3. `relatedConnection` with composite cursor
-4. Two fragments with same alias, same args, but different field selections
-
-## Filing an Issue
-
-This reproduction can be used to file an issue with the Pothos GraphQL project:
-- https://github.com/hayes/pothos/issues
