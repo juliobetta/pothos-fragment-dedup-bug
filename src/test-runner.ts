@@ -10,6 +10,17 @@ query PropertiesQuery($endDate: DateTime!, $month: Int!) {
       node {
         id
         name
+        # return current month metrics
+        # it introduces the OR pattern again
+        metrics(filter: { endDate: { equals: $endDate } }) {
+          edges {
+            node {
+              endDate
+              fieldA
+              fieldB
+            }
+          }
+        }
         ...FragmentA
         ...FragmentB
       }
@@ -92,17 +103,29 @@ async function run() {
   console.log("=".repeat(70));
   console.log("TEST 1: BUGGY (same alias) - watch for OR pattern");
   console.log("=".repeat(70));
-  
-  await execute({ schema, document: parse(BUGGY_QUERY), variableValues: variables, contextValue: {} });
+
+  await execute({
+    schema,
+    document: parse(BUGGY_QUERY),
+    variableValues: variables,
+    contextValue: {},
+  });
 
   console.log("\n" + "=".repeat(70));
   console.log("TEST 2: FIXED (different aliases) - all LATERAL JOINs");
   console.log("=".repeat(70));
-  
-  await execute({ schema, document: parse(FIXED_QUERY), variableValues: variables, contextValue: {} });
+
+  await execute({
+    schema,
+    document: parse(FIXED_QUERY),
+    variableValues: variables,
+    contextValue: {},
+  });
 
   console.log("\n" + "=".repeat(70));
-  console.log("SUMMARY: Look for 'WHERE ((property_id = $1 AND end_date = $2) OR ...)' in TEST 1");
+  console.log(
+    "SUMMARY: Look for 'WHERE ((property_id = $1 AND end_date = $2) OR ...)' in TEST 1"
+  );
   console.log("=".repeat(70));
 
   await prisma.$disconnect();
